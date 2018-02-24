@@ -59,21 +59,12 @@ static void usartWaitRespLenMsec(int resp_len, unsigned long timeout_msec)
 	{
 		delay_ms(10);
 	}
-	
-	if (usart_buffer_pos > 0)
-	{
-		char t[0xf];
-		sprintf(t, "key %02X\r\n", usart_buffer[usart_buffer_pos - 1]);
-		for (const char *p = t; *p; ++p)
-			usart_putchar((USART_t*) &UCSR0A, *p);
-
-	}
 }
 
 ISR(USART_RX_vect)
 {
 	uint8_t c = usart_getchar((USART_t*) &UCSR0A);
-	if (usart_buffer_pos >= 0 && usart_buffer_pos < sizeof(usart_buffer))
+	if (usart_buffer_pos >= 0 && usart_buffer_pos < sizeof(usart_buffer) - 1)
 	{
 		usart_buffer[usart_buffer_pos++] = c;
 		usart_buffer[usart_buffer_pos] = 0;

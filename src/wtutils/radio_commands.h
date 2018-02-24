@@ -1,0 +1,10 @@
+#ifndef RADIO_API_H_INCLUDED
+#define RADIO_API_H_INCLUDED
+
+#define API_LOW_REQ		"VESNINO WATER LOW\r\n"
+#define API_LOW_RESP	"VESNINO LOW ACK\r\n"
+
+#define API_HIGH_REQ	"VESNINO WATER HIGH\r\n"
+#define API_HIGH_RESP	"VESNINO HIGH ACK\r\n"
+
+#endif

@@ -31,13 +31,6 @@
 // also adjust asm in owibitfunctions.h and owipolled.h
 #define TEMP_PIN		  IOPORT_CREATE_PIN(PORTB, 0)
 
-
-#define API_LOW_REQ		"VESNINO WATER LOW\r\n"
-#define API_LOW_RESP	"VESNINO LOW ACK\r\n"
-
-#define API_HIGH_REQ	"VESNINO WATER HIGH\r\n"
-#define API_HIGH_RESP	"VESNINO HIGH ACK\r\n"
-
 #define F_CPU BOARD_EXTERNAL_CLK
 
 #endif // CONF_BOARD_H

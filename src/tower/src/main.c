@@ -36,6 +36,7 @@
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <radio.h>
+#include <radio_commands.h>
 
 enum InterruptOnChange
 {

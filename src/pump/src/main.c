@@ -41,6 +41,7 @@
 #include <time.h>
 
 #include <radio.h>
+#include <radio_commands.h>
 #include <ds18b20.h>
 
 static volatile int log_request = 0;
