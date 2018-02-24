@@ -16,8 +16,28 @@ Water level sensor connects ground to MCU pins and so wakes it via pin change in
 
 4) Pump side
 
-Runs on Atmega328 with 1.84Mhz quarts. Uses same E32TTL100 for radio, DS18B20 for air temp sense, ST7066U-based LCD and K293 solid-state 220V relay that's further controls powerful relay for switching pump. Schematics doesn't show timer relay (protects from MCU faults) and soft start module used to protect pump.
+Runs on Atmega328 with 1.84Mhz quartz. Uses same E32TTL100 for radio, DS18B20 for air temp sense, ST7066U-based LCD and K293 solid-state 220V relay that's further controls powerful relay for switching pump. Schematics doesn't show timer relay (protects from MCU faults) and soft start module used to protect pump.
 
 MCU monitors radio, temperature and time. Pump is not allowed to run for long periods, to stay off for long periods (those items assume tower side is having problems but water must flow anyway); in winter pump should run for short periods spilling water to drainage to protect tower from forming ice.
 
 MCU deploys watchdog to reset itself. MCU can't run for over 100 years because time counter doesn't account for overflow, still there's a power failure every year so that's not an issue.
+
+LCD shows device operation history, activated with log button push it cycles through log items back. Otherwise just shows last action taken. Format is 
+
+Msg#: <time passed since event> <action taken>
+<text>
+
+5) Building
+
+Pump side needs 1wire library, it uses atmel AVR318 sample with some changes 
+Download from http://www.microchip.com/wwwAppNotes/AppNotes.aspx?appnote=en591191
+
+Extract following to src/pump/src
+// common_files
+// OWIBitFunctions.h
+// OWIHighLevelFunctions.c
+// OWIHighLevelFunctions.h
+// OWIPolled.h
+// OWISWBitFunctions.c
+
+And apply avr318.patch there

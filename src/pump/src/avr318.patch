@@ -1,0 +1,376 @@
+--- common_files/OWIdefs.h	Thu Aug 19 16:27:28 2004
++++ common_files/OWIdefs.h	Fri Feb 16 23:07:46 2018
+@@ -21,7 +21,6 @@
+ #ifndef _OWI_DEFS_H_
+ #define _OWI_DEFS_H_
+ 
+-#include <ioavr.h>
+ 
+ 
+ /****************************************************************************
+--- OWIBitFunctions.h	Thu Aug 19 16:27:30 2004
++++ OWIBitFunctions.h	Sat Feb 24 14:43:35 2018
+@@ -61,11 +61,23 @@
+  *  
+  *  \param bitMask  A bitmask of the buses to pull low.
+  */
+-#define OWI_PULL_BUS_LOW(bitMask) \
++/*#define OWI_PULL_BUS_LOW(bitMask) \
+             OWI_DDR |= bitMask; \
+-            OWI_PORT &= ~bitMask;
++            OWI_PORT &= ~bitMask;*/
+             
+ 
++
++// for 1.84Mhz need fastest possible port io, 4 cycles here
++// on entry DDRBx=0 PORTBx=1 (input with pullup)
++// switch to intermed DDRBx=0 PORTBx=0 (datasheet 18.2.3)
++// then switch to final DDRBx=1 PORTBx=0
++#define OWI_PULL_BUS_LOW(x) asm volatile ("cbi %2, %1" "\n" "sbi %0, %1" "\n" \
++	:: "I" (_SFR_IO_ADDR(OWI_DDR)), "I" (OWI_PORT_PIN), "I" (_SFR_IO_ADDR(OWI_PORT)))
++            
++#define OWI_SAMPLE_BUS(to) asm volatile ( "in %0, %1" "\n" "andi %0, %2" "\n" \
++	 : "=d" (to) \
++	 : "I" (_SFR_IO_ADDR(OWI_PIN)), "I" (OWI_PORT_PINMASK))
++
+ /*! \def    OWI_RELEASE_BUS(bitMask)
+  *
+  *  \brief  Release the bus. 
+@@ -77,9 +89,15 @@
+  */
+ #ifdef OWI_USE_INTERNAL_PULLUP            
+ // Set 1-Wire pin(s) to input and enable internal pull-up resistor.
+-#define OWI_RELEASE_BUS(bitMask) \
+-            OWI_DDR &= ~bitMask; \
+-            OWI_PORT |= bitMask; 
++//#define OWI_RELEASE_BUS(bitMask) \
++//            OWI_DDR &= ~bitMask; 
++//			  OWI_PORT |= bitMask; 
++			
++// from DDRBx=1 PORTBx=0
++// to tristate DDRBx=0 PORTBx=0
++// and enable pull-up with DDRBx=0 PORTBx=1			
++#define OWI_RELEASE_BUS(x) asm volatile ("cbi %0, %1" "\n" "sbi %2, %1" "\n" \
++	:: "I" (_SFR_IO_ADDR(OWI_DDR)), "I" (OWI_PORT_PIN), "I" (_SFR_IO_ADDR(OWI_PORT)))			
+ 
+ #else
+ // Set 1-Wire pin(s) to input mode. No internal pull-up enabled.
+--- OWIHighLevelFunctions.c	Thu Aug 19 16:27:30 2004
++++ OWIHighLevelFunctions.c	Sat Feb 24 01:10:13 2018
+@@ -20,8 +20,6 @@
+ *                         $Date: Thursday, August 19, 2004 14:27:18 UTC $
+ ****************************************************************************/
+ 
+-#include <ioavr.h>
+-
+ #include "OWIHighLevelFunctions.h"
+ #include "OWIBitFunctions.h"
+ #include "OWIPolled.h"
+@@ -196,7 +193,7 @@
+         {
+             // Both bits 1 (Error).
+             newDeviation = OWI_ROM_SEARCH_FAILED;
+-            return;
++            return OWI_ROM_SEARCH_FINISHED;
+         }
+         else if (bitA ^ bitB)
+         {
+--- OWIPolled.h	Thu Aug 19 16:27:30 2004
++++ OWIPolled.h	Sat Feb 24 15:04:10 2018
+@@ -21,6 +21,8 @@
+ #ifndef _OWI_POLLED_H_
+ #define _OWI_POLLED_H_
+ 
++#include <avr/io.h>
++
+ #include "..\common_files\OWIdefs.h"
+ #include "..\common_files\OWIDeviceSpecific.h"
+ 
+@@ -30,102 +32,28 @@
+ *****************************************************************************/
+ // Uncomment one of the two following lines to choose between 
+ // software only and UART driver.
++#ifndef OWI_SOFTWARE_DRIVER    
+ #define     OWI_SOFTWARE_DRIVER    
++#endif    
+ //#define     OWI_UART_DRIVER
+ 
+-/*****************************************************************************
+- The following defines only has an effect on the software only driver.
+-*****************************************************************************/
+-/*! \brief  CPU clock frequency. 
+- *  
+- *  This define is used to calculate delays when the software only driver
+- *  is used. The CPU frequency must be at least 2.170 MHz to be able to
+- *  generate the shortest delays.
+- */
+-#define     CPU_FREQUENCY   8.000
+-
+-
+ /*! \brief  Use internal pull-up resistor on 1-Wire buses.
+  *
+  *  If this symbol is defined, the internal pull-up resister on the GPIO pins 
+  *  of the AVR will be used to generate the necessary pull-up on the bus. If 
+  *  an external pull-up resistor is used, uncomment this define.
+  */
++#ifndef OWI_USE_INTERNAL_PULLUP
+ #define     OWI_USE_INTERNAL_PULLUP
++#endif
+ 
+ 
+ // Port configuration registers for 1-Wire buses.
+ // Make sure that all three registers belong to the same port.
+-#define     OWI_PORT        PORTD   //!< 1-Wire PORT Data register.
+-#define     OWI_PIN         PIND    //!< 1-Wire Input pin register.
+-#define     OWI_DDR         DDRD    //!< 1-Wire Data direction register.
+-
+-
+-/*****************************************************************************
+- The following defines only has an effect on the UART driver.
+-*****************************************************************************/
+-/*! Use U(S)ART double speed
+- *
+- *  Set this define to '1' to enable U(S)ART double speed. More information
+- *  can be found in the data sheet of the AVR.
+- *
+- *  \note   The UART Baud Rate Register settings are also affected by this
+- *          setting.
+- */
+-#define     OWI_UART_2X         1
+-
+-
+-/*! UART Baud Rate register setting that results in 115200 Baud
+- *
+- *  This define should be set to the UBRR value that will generate
+- *  a Baud rate of 115200. See data sheet for more information and 
+- *  examples of Baud rate settings.
+- */
+-#define     OWI_UBRR_115200     8
+-
+-
+-/*! UART Baud Rate register setting that results in 9600 Baud
+- *
+- *  This define should be set to the UBRR value that will generate
+- *  a Baud rate of 9600. See data sheet for more information and 
+- *  examples of Baud rate settings.
+- */
+-#define     OWI_UBRR_9600       103
+-
+-
+-
+-/*****************************************************************************
+- Other defines
+-*****************************************************************************/
+-// Pin bitmasks.
+-#define     OWI_PIN_0       0x01
+-#define     OWI_PIN_1       0x02
+-#define     OWI_PIN_2       0x04
+-#define     OWI_PIN_3       0x08
+-#define     OWI_PIN_4       0x10
+-#define     OWI_PIN_5       0x20
+-#define     OWI_PIN_6       0x40
+-#define     OWI_PIN_7       0x80
+-
+-
+-/*****************************************************************************
+- Timing parameters
+-*****************************************************************************/
+-
+-#define     OWI_DELAY_OFFSET_CYCLES    13   //!< Timing delay when pulling bus low and releasing bus.
+-
+-// Bit timing delays in clock cycles (= us*clock freq in MHz).
+-#define     OWI_DELAY_A_STD_MODE    ((6   * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_B_STD_MODE    ((64  * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_C_STD_MODE    ((60  * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_D_STD_MODE    ((10  * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_E_STD_MODE    ((9   * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_F_STD_MODE    ((55  * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-//#define     OWI_DELAY_G_STD_MODE  ((0   * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_H_STD_MODE    ((480 * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_I_STD_MODE    ((70  * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-#define     OWI_DELAY_J_STD_MODE    ((410 * CPU_FREQUENCY) - OWI_DELAY_OFFSET_CYCLES)
+-
+-
++#define     OWI_PORT        PORTB   //!< 1-Wire PORT Data register.
++#define     OWI_PIN         PINB    //!< 1-Wire Input pin register.
++#define     OWI_DDR         DDRB    //!< 1-Wire Data direction register.
++#define		OWI_PORT_PIN    0
++#define		OWI_PORT_PINMASK (1 << OWI_PORT_PIN)
+ 
+ #endif
+--- OWISWBitFunctions.c	Thu Aug 19 16:27:30 2004
++++ OWISWBitFunctions.c	Sat Feb 24 00:39:37 2018
+@@ -23,12 +23,12 @@
+ 
+ #ifdef OWI_SOFTWARE_DRIVER
+ 
+-#include <ioavr.h>
+-#include <inavr.h>
+-
+ #include "OWIBitFunctions.h"
+-
+-
++#include <conf_clock.h>
++#include <conf_board.h>
++#include <util/delay.h>
++#include <avr/interrupt.h>
++#include <asf.h>
+ /*! \brief Initialization of the one wire bus(es). (Software only driver)
+  *  
+  *  This function initializes the 1-Wire bus(es) by releasing it and
+@@ -42,9 +42,22 @@
+     // The first rising edge can be interpreted by a slave as the end of a
+     // Reset pulse. Delay for the required reset recovery time (H) to be 
+     // sure that the real reset is interpreted correctly.
+-    __delay_cycles(OWI_DELAY_H_STD_MODE);
++    __builtin_avr_delay_cycles(OWI_DELAY_H_STD_MODE);
++}
++
++static inline int __save_interrupt(void)
++{
++	volatile uint8_t flags = SREG;
++	return flags;
++}
++
++static inline void __restore_interrupt(int flags)
++{
++	asm volatile("" ::: "memory");
++	SREG = (uint8_t) flags;
+ }
+ 
++#define __disable_interrupt() cli()
+ 
+ /*! \brief  Write a '1' bit to the bus(es). (Software only driver)
+  *
+@@ -55,22 +68,17 @@
+  */
+ void OWI_WriteBit1(unsigned char pins)
+ {
+-    unsigned char intState;
+-    
+-    // Disable interrupts.
+-    intState = __save_interrupt();
+-    __disable_interrupt();
+-    
+     // Drive bus low and delay.
+     OWI_PULL_BUS_LOW(pins);
+-    __delay_cycles(OWI_DELAY_A_STD_MODE);
++    //__builtin_avr_delay_cycles(OWI_DELAY_A_STD_MODE);
++	delay_us(1);
+     
+     // Release bus and delay.
+     OWI_RELEASE_BUS(pins);
+-    __delay_cycles(OWI_DELAY_B_STD_MODE);
++    //__builtin_avr_delay_cycles(OWI_DELAY_B_STD_MODE);
++	delay_us(60);
+     
+-    // Restore interrupts.
+-    __restore_interrupt(intState);
++	delay_us(1);
+ }
+ 
+ 
+@@ -83,22 +91,16 @@
+  */
+ void OWI_WriteBit0(unsigned char pins)
+ {
+-    unsigned char intState;
+-    
+-    // Disable interrupts.
+-    intState = __save_interrupt();
+-    __disable_interrupt();
+-    
+     // Drive bus low and delay.
+     OWI_PULL_BUS_LOW(pins);
+-    __delay_cycles(OWI_DELAY_C_STD_MODE);
++    //__builtin_avr_delay_cycles(OWI_DELAY_C_STD_MODE);
++	delay_us(60);
+     
+     // Release bus and delay.
+     OWI_RELEASE_BUS(pins);
+-    __delay_cycles(OWI_DELAY_D_STD_MODE);
++    //__builtin_avr_delay_cycles(OWI_DELAY_D_STD_MODE);
+     
+-    // Restore interrupts.
+-    __restore_interrupt(intState);
++	delay_us(1);
+ }
+ 
+ 
+@@ -112,27 +114,22 @@
+  */
+ unsigned char OWI_ReadBit(unsigned char pins)
+ {
+-    unsigned char intState;
+-    unsigned char bitsRead;
+-    
+-    // Disable interrupts.
+-    intState = __save_interrupt();
+-    __disable_interrupt();
++    unsigned char bitsRead = 0;
+     
+     // Drive bus low and delay.
+-    OWI_PULL_BUS_LOW(pins);
+-    __delay_cycles(OWI_DELAY_A_STD_MODE);
++    OWI_PULL_BUS_LOW(pins); // 2.2us
++	delay_us(1);            // 3.2us
+     
+-    // Release bus and delay.
+-    OWI_RELEASE_BUS(pins);
+-    __delay_cycles(OWI_DELAY_E_STD_MODE);
+-    
+-    // Sample bus and delay.
+-    bitsRead = OWI_PIN & pins;
+-    __delay_cycles(OWI_DELAY_F_STD_MODE);
++    OWI_RELEASE_BUS(pins);  // 4.3us
++	delay_us(5);            // 9.3us
++    //__builtin_avr_delay_cycles(OWI_DELAY_E_STD_MODE);
++
++	// push - 10.3us
++	// in - 10.8us
++	OWI_SAMPLE_BUS(bitsRead);    
+     
+-    // Restore interrupts.
+-    __restore_interrupt(intState);
++	delay_us(60);
++	delay_us(1);
+     
+     return bitsRead;
+ }
+@@ -151,7 +148,7 @@
+ unsigned char OWI_DetectPresence(unsigned char pins)
+ {
+     unsigned char intState;
+-    unsigned char presenceDetected;
++    uint8_t bus_state;
+     
+     // Disable interrupts.
+     intState = __save_interrupt();
+@@ -159,20 +156,22 @@
+     
+     // Drive bus low and delay.
+     OWI_PULL_BUS_LOW(pins);
+-    __delay_cycles(OWI_DELAY_H_STD_MODE);
++    //__builtin_avr_delay_cycles(OWI_DELAY_H_STD_MODE);
++	delay_us(500);
+     
+     // Release bus and delay.
+     OWI_RELEASE_BUS(pins);
+-    __delay_cycles(OWI_DELAY_I_STD_MODE);
++    delay_us(60);
+     
+     // Sample bus to detect presence signal and delay.
+-    presenceDetected = ((~OWI_PIN) & pins);
+-    __delay_cycles(OWI_DELAY_J_STD_MODE);
++	OWI_SAMPLE_BUS(bus_state);
++	//presenceDetected = ((~OWI_PIN) & pins);
++    delay_us(300);
+     
+     // Restore interrupts.
+     __restore_interrupt(intState);
+     
+-    return presenceDetected;
++    return bus_state == 0;
+ }
+ 
+ 
