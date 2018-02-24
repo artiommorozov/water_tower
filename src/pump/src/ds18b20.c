@@ -118,6 +118,7 @@ int ds18b20_read_temp(unsigned char *rom)
 		}
 	}
 	
+	system_tick();	
 	sei();
 	
 	return ret;
