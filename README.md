@@ -14,6 +14,8 @@ Runs on Atmega328 MCU with 1.84MHz quartz to make usart communication reliable. 
 
 Water level sensor connects ground to MCU pins and so wakes it via pin change interrupt. MCU will then request on/off from pump side via radio (sends req and waits for ack a few times) and then will go to sleep to save battery. Radio uses wake-up mode assuming motor part radio is asleep.
 
+D1 is startup diagnostics LED, D2 indicates sending data, D3 - ack received.
+
 4) Pump side
 
 Runs on Atmega328 with 1.84Mhz quartz. Uses same E32TTL100 for radio, DS18B20 for air temp sense, ST7066U-based LCD and K293 solid-state 220V relay that's further controls powerful relay for switching pump. Schematics doesn't show timer relay (protects from MCU faults) and soft start module used to protect pump.
