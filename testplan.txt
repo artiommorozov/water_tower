@@ -1,0 +1,27 @@
+Tower:
+- low sensor triggered - sending low, stop after ACK
+- high sensor triggered - sending high, stop after ACK
+- low sensor triggered - sending low, stop after max retry count
+
+Pump:
+- Power-up - motor off, temp sensor OK
+- Power-up, tower low - motor off, msg on LCD
+- Power-up, tower high - motor on, msg on LCD
+  - tower low - motor off, msg on LCD
+  - tower high - motor on, msg on LCD
+  - LCD history button push - LCD cycles messages once
+  - motor on timeout reached - motor off, msg on LCD
+  - motor off timeout reached - motor on, msg on LCD
+- Power-up, motor off timeout reached - motor on, msg on LCD
+- Power-up, temp sensor below limit, set cold off timeout a bit below off timeout, cold off timeout reached - motor on, msg on LCD
+  - motor off timeout reached - no effect
+  - cold runtime timeout reached - motor stop
+- Power-up, temp sensor below limit, set cold off timeout a bit below off timeout, cold off timeout reached - motor on, msg on LCD
+  - tower high - motor still on, msg on LCD (overfill to drainage test)
+  - cold runtime timeout reached - motor stop
+  - temp up, motor off timeout reached - motor start, msg on LCD
+- Power-up, temp sensor below limit, set cold off timeout a bit below off timeout, cold off timeout reached - motor on, msg on LCD
+  - tower low - motor still on, msg on LCD
+  - cold runtime timeout reached - motor still on, msg on LCD
+  - motor on timeout reached - motor off, msg on LCD
+
