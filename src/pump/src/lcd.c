@@ -55,15 +55,15 @@ static void fmt_time(int num, char *to, time_t v)
 
 int show_msg(int at)
 {
-	char line1[0x10];
+	char line1[0x20];
 	
-	for (; at < lcd_msg_count && !*lcd_msg[at].line2; ++at)
+	for (; at < lcd_msg_count && !lcd_msg[at].line2[0]; ++at)
 		;
-		
+			
 	if (at >= lcd_msg_count)
 		at = 0;
 
-	fmt_time(at, line1, lcd_msg[at].t);		
+	fmt_time(at + 1, line1, lcd_msg[at].t);		
 	strcat(line1, lcd_msg[at].action);
 
 	if (strcmp(last_msg_l1, line1))
@@ -75,7 +75,7 @@ int show_msg(int at)
 	return at;
 }
 
-void lcd_half_command(int bits, int rs_high)
+static void lcd_half_command_ni(int bits, int rs_high)
 {
 	ioport_set_pin_low(LCD_RW);
 	ioport_set_pin_level(LCD_RS, rs_high);
@@ -95,9 +95,7 @@ void lcd_half_command(int bits, int rs_high)
 	delay_us(50);
 }
 
-void lcd_data_high(void);
-
-void lcd_data_high(void)
+static void lcd_data_high_ni(void)
 {
 	ioport_set_pin_high(LCD_DB4);
 	ioport_set_pin_high(LCD_DB5);
@@ -105,20 +103,16 @@ void lcd_data_high(void)
 	ioport_set_pin_high(LCD_DB7);
 }
 
-void lcd_command_nobusy(int bits);
-
-void lcd_command_nobusy(int bits)
+static void lcd_command_nobusy_ni(int bits)
 {
-	lcd_half_command(bits >> 4, 0);
-	lcd_half_command(bits, 0);
-	lcd_data_high();
+	lcd_half_command_ni(bits >> 4, 0);
+	lcd_half_command_ni(bits, 0);
+	lcd_data_high_ni();
 	
 	delay_us(100);
 }
 
-void wait_busy_clear(void);
-
-void wait_busy_clear(void)
+static void wait_busy_clear_ni(void)
 {
 	int ready = 0;
 	while (!ready)
@@ -154,29 +148,33 @@ void wait_busy_clear(void)
 	ioport_set_pin_low(LCD_RW);
 }
 
-void lcd_command(int bits)
+static void lcd_command(int bits)
 {
 	//wait_busy_clear();
-	
+
+	cli();	
 	delay_ms(1);
 	
-	lcd_half_command(bits >> 4, 0);
-	lcd_half_command(bits, 0);
+	lcd_half_command_ni(bits >> 4, 0);
+	lcd_half_command_ni(bits, 0);
 	
 	delay_us(50);
-	lcd_data_high();
+	lcd_data_high_ni();
 	delay_us(50);
+	sei();
 }
 
-void lcd_data(int bits)
+static void lcd_data(int bits)
 {
-	lcd_half_command(bits >> 4, 1);
-	lcd_half_command(bits, 1);
+	cli();
+	lcd_half_command_ni(bits >> 4, 1);
+	lcd_half_command_ni(bits, 1);
 	
 	delay_us(40);
+	sei();
 }
 
-int lcd_address2bits(int line, int ofs)
+static int lcd_address2bits(int line, int ofs)
 {
 	return (line ? 0x40 : 0x0) + ofs;
 }
@@ -200,7 +198,7 @@ static char lcd_chargen[] = {
 0x70, 0x63, 0xBF, 0x79, 0xE4, 0x78, 0xE5, 0xC0, 0xC1, 0xE6, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7
 };
 
-unsigned char lcd_getcharcode(char v)
+static unsigned char lcd_getcharcode(char v)
 {
 	return lcd_chargen[(unsigned char) v];
 }
@@ -218,45 +216,49 @@ void lcd_str(int line, const char *data)
 		lcd_data(whitespace);
 }
 
-void lcd_clear(void)
+static void lcd_clear(void)
 {
 	lcd_command(LcdData_Db0);
 	delay_ms(2);
 }
 
-void lcd_init(void)
+void lcd_reset(void)
 {
-	ioport_set_pin_dir(LCD_LIGHT, IOPORT_DIR_OUTPUT);
-	ioport_set_pin_high(LCD_LIGHT);
-	
-	delay_ms(100);
-	
 	{
+		cli();
 		int pins[] = { LCD_RS, LCD_RW, LCD_E, LCD_DB4, LCD_DB5, LCD_DB6, LCD_DB7 };
 		for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i)
 		{
 			ioport_set_pin_dir(pins[i], IOPORT_DIR_OUTPUT);
 			ioport_set_pin_low(pins[i]);
 		}
-		
-		lcd_data_high();
+	
+		lcd_data_high_ni();
+		sei();
+	
 		delay_ms(50);
 	}
 
 	for (int i = 0; i < 2; ++i)
 	{
-		lcd_half_command(LcdData_Db1 | LcdData_Db0, 0);
-		lcd_data_high();
+		cli();
+		lcd_half_command_ni(LcdData_Db1 | LcdData_Db0, 0);
+		lcd_data_high_ni();
 		delay_us(40);
 	
-		lcd_command_nobusy(LcdData_Db5 | LcdData_Db3); // 4bit (Db4=0) 2 lines (Db3=1) 5x8 font (Db2=0)
-		lcd_command_nobusy(LcdData_Db5 | LcdData_Db3); // repeat per doc
+		lcd_command_nobusy_ni(LcdData_Db5 | LcdData_Db3); // 4bit (Db4=0) 2 lines (Db3=1) 5x8 font (Db2=0)
+		lcd_command_nobusy_ni(LcdData_Db5 | LcdData_Db3); // repeat per doc
+		sei();
 	}
-	
+
 	lcd_command(LcdData_Db3 | LcdData_Db2); // Display on (Db2=1)
 	lcd_clear();
-	lcd_command(LcdData_Db2 | LcdData_Db1); // Entry mode set, move right, no shift
-	
+	lcd_command(LcdData_Db2 | LcdData_Db1); // Entry mode set, move right, no shift	
+}
+
+void lcd_init(void)
+{
+	lcd_reset();
 	memset(lcd_msg, 0, sizeof(lcd_msg));
 }
 

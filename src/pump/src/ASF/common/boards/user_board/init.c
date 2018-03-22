@@ -12,9 +12,16 @@
 #include <board.h>
 #include <conf_board.h>
 
+static void init_watchdog(void)
+{
+	ioport_set_pin_high(WATCHDOG_PIN);
+	ioport_set_pin_low(WATCHDOG_PIN);
+	ioport_set_pin_high(WATCHDOG_PIN);
+}
+
 void board_init(void)
 {
-	const int out_pins[] = { RADIO_MD0, RADIO_MD1, MOTOR_PIN };
+	const int out_pins[] = { RADIO_MD0, RADIO_MD1, MOTOR_PIN, WATCHDOG_PIN };
 	const int in_pins[] = { RADIO_AUX, LOG_BUTTON_PIN };
 		
 	ioport_init();
@@ -30,4 +37,6 @@ void board_init(void)
 		ioport_set_pin_dir(in_pins[i], IOPORT_DIR_INPUT);
 		ioport_set_pin_mode(in_pins[i], IOPORT_MODE_PULLUP);
 	}
+	
+	init_watchdog();
 }

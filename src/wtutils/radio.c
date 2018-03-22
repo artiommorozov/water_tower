@@ -159,18 +159,19 @@ void usartRecvInit(int aux, int md0, int md1)
 	RADIO_MD1 = md1;
 	RADIO_MD0 = md0;
 	RADIO_AUX = aux;
-	
+
 	initRadioComm();
-	
 	enableUsartInterrupt();
 }
 
 void enableWakeByRadioInterrupt(int interrupt)
 {
 	usartEnterPowerSavingMode();
-	
+
+	cli();	
 	PCMSK1 |= (1 << interrupt);
 	PCICR |= 1 << PCIE1;
+	sei();
 }
 
 int usartReply(const char *resp)

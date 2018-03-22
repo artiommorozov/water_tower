@@ -16,8 +16,7 @@
  *
  * -# Include the ASF header files (through asf.h)
  * -# "Insert system clock initialization code here" comment
- * -# Minimal main function that starts with a call to board_init()
- * -# "Insert application code here" comment
+ * -# Minimal main function that starts with a call to board_init() * -# "Insert application code here" comment
  *
  */
 
@@ -47,19 +46,38 @@
 static volatile int log_request = 0;
 static time_t motor_last_stop = 0, motor_last_start = 0, motor_next_stop = 0;
 
+//#define TESTMODE
+
+#ifndef TESTMODE
 static const time_t force_start_if_no_radio = 60UL * 60 * 24; 
 static const time_t force_stop_if_no_radio = 60UL * 60 * 3; 
-static const time_t force_start_in_winter_each = 60UL * 60 * 5; 
-static const time_t winter_runout = 60 * 30;
-static const int winter_max_temp = -5; 
-static int stopped = 1;
+static const time_t force_start_in_winter_each = 60UL * 60 * 3; 
+static const time_t winter_runtime = 60 * 10;
+static const int winter_max_temp = -5;
+#else
+static const time_t force_start_if_no_radio = 60;
+static const time_t force_stop_if_no_radio = 60;
+static const time_t force_start_in_winter_each = 50;
+static const time_t winter_runtime = 40;
+static const int winter_max_temp = 25;
+#endif
+
+enum PumpStatus
+{
+	StartedByTower = 1,
+	StartedByTimeout = 2,
+	StartedByColdTemp = 3,
+	Stopped = 4,
+};
+ 
+static enum PumpStatus pump_status = Stopped;
 
 static unsigned char temp_sensor_rom[0x20];
 
 static void resetRadioWakeInterrupt(void)
 {
 	if (!ioport_get_pin_level(RADIO_AUX))
-		PCICR &= 0;
+		PCMSK1 &= ~(1 << WAKE_BY_RADIO_INT);
 }
 
 ISR(PCINT1_vect)
@@ -92,10 +110,18 @@ static void displayMsg(const char *v, const char *action)
 	show_msg(0);
 }
 
-static void motorStart(const char *msg, time_t runtime)
+static void motorStart(const char *msg, time_t runtime, enum PumpStatus new_status)
 {
+	if (pump_status != Stopped
+		&& !(new_status != StartedByColdTemp
+			&& pump_status == StartedByColdTemp))
+	{
+		displayMsg("Повторный пуск", "пуск");
+		return;
+	}
+	
 	ioport_set_pin_high(MOTOR_PIN);
-	stopped = 0;
+	pump_status = new_status;
 	
 	time(&motor_last_start);
 	motor_next_stop = motor_last_start + runtime;
@@ -106,9 +132,13 @@ static void motorStart(const char *msg, time_t runtime)
 static void motorStop(const char *msg)
 {
 	ioport_set_pin_low(MOTOR_PIN);
-	stopped = 1;
 	
-	time(&motor_last_stop);
+	if (pump_status != Stopped)
+	{
+		pump_status = Stopped;
+		time(&motor_last_stop);
+	}
+	
 	displayMsg(msg, "стоп");
 }
 
@@ -117,14 +147,14 @@ static int handleRadioSilence(void)
 	time_t now;
 	time(&now);
 	
-	if (stopped
+	if (pump_status == Stopped
 		&& now - motor_last_stop > force_start_if_no_radio)
 	{
 		char buf[0x20];
 		sprintf(buf, "Нет сигнала %dч", hours(now - motor_last_stop));
-		motorStart(buf, force_stop_if_no_radio);
+		motorStart(buf, force_stop_if_no_radio, StartedByTimeout);
 	}
-	else if (!stopped
+	else if (pump_status != Stopped
 		&& now > motor_next_stop)
 	{
 		char buf[0x20];
@@ -149,13 +179,13 @@ static void periodicColdTimeStart(void)
 	time_t now;	
 	time(&now);
 	
-	if (//temp < winter_max_temp &&
-		stopped
+	if (temp < winter_max_temp
+		&& pump_status == Stopped
 		&& now - motor_last_stop > force_start_in_winter_each)
 	{
 		char buf[0x20];
 		sprintf(buf, "%d *C, перелив", temp);
-		motorStart(buf, winter_runout);
+		motorStart(buf, winter_runtime, StartedByColdTemp);
 	}
 }
 
@@ -171,14 +201,20 @@ static void checkReqAndReply(void)
 	case 0: 
 	{
 		usartReply(API_LOW_RESP); 
-		motorStart("Мало воды", force_stop_if_no_radio);
+		motorStart("Мало воды", force_stop_if_no_radio, StartedByTower);
+		
 		return;
 	} break;
 	
 	case 1: 
 	{ 
-		usartReply(API_HIGH_RESP); 
-		motorStop("Башня полная");
+		usartReply(API_HIGH_RESP);
+		
+		if (pump_status == StartedByColdTemp)
+			displayMsg("Башня полная", "игнр");
+		else 
+			motorStop("Башня полная");
+			
 		return;
 	} break;
 	}
@@ -189,8 +225,19 @@ static void checkReqAndReply(void)
 
 static void enableLogButtonInterrupt(void)
 {
+	cli();
 	PCMSK0 |= (1 << LOG_BUTTON_INT);
 	PCICR |= 1 << PCIE0;
+	sei();
+}
+
+#define watchdogReset() asm volatile ("wdr")
+
+static void delay_5s(void)
+{
+	watchdogReset();
+	delay_s(5);
+	watchdogReset();
 }
 
 static void scanTempSensor(void)
@@ -209,15 +256,29 @@ static void scanTempSensor(void)
 			temp_sensor_rom[6], temp_sensor_rom[7]);
 			
 		displayMsg(buf, "TROM");
-		delay_s(3);
+		delay_5s();
 		
 		t = readTemp();
 		sprintf(buf, "T=%d", t);
 		displayMsg(buf, "TEMP");
-		delay_s(3);
+		delay_5s();
+		
+#ifdef TESTMODE
+		displayMsg("TESTMODE", "ATTN");
+		delay_5s();
+#endif
 	}
 	else
 		displayMsg("Перезагрузка", "T???");
+}
+
+static void enableMCUWatchdog(void)
+{
+	cli();
+	watchdogReset();
+	WDTCSR |= (1<<WDCE) | (1<<WDE);
+	WDTCSR = (1<<WDE) | (1<<WDP3) | (1<<WDP0);	
+	sei();
 }
 
 int main (void)
@@ -226,14 +287,15 @@ int main (void)
 	
 	sysclk_init();
 	board_init();
-	lcd_init();
-	clock_init(BOARD_EXTERNAL_CLK);
+	clock_init(BOARD_EXTERNAL_CLK, WATCHDOG_PIN);
+	enableMCUWatchdog();
 	
+	sei();
+	lcd_init();
+
 	usartRecvInit(RADIO_AUX, RADIO_MD0, RADIO_MD1);
 	enableWakeByRadioInterrupt(WAKE_BY_RADIO_INT);
 	enableLogButtonInterrupt();
-	
-	sei();
 
 	ds18b20_init(TEMP_PIN);
 	
@@ -249,13 +311,15 @@ int main (void)
 		if (log_request && !lcd_history_line)
 		{	
 			log_request = 0;
-			lcd_init();
-			
+			lcd_reset();
+				
 			lcd_history_line = show_msg(++lcd_history_line);
 		}
 		else if (lcd_history_line)
 			lcd_history_line = show_msg(++lcd_history_line);
 		else 
 			show_msg(0);
+			
+		delay_5s();
 	}
 }

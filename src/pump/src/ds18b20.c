@@ -57,8 +57,6 @@ void ds18b20_scan(unsigned char **roms, int *inout_num_rom)
 	unsigned char *newID = roms[0];
 	uint8_t pres2 = 0;
 	
-	cli();
-	
 	pres = OWI_DetectPresence(OWI_PORT_PINMASK);
 	
 	int lastDeviation = 0;
@@ -79,8 +77,6 @@ void ds18b20_scan(unsigned char **roms, int *inout_num_rom)
 		newID = roms[++numDevices];
 	}  
 
-	sei();	
-
 	*inout_num_rom = numDevices;
 	//sprintf(buf, "p=%d n=%d 1=%d 0=%d", pres, numDevices, ones, zeroes);
 	//lcd_str(0, buf);
@@ -94,22 +90,26 @@ int ds18b20_read_temp(unsigned char *rom)
 {
 	int16_t ret = 99;
 
-	cli();
-	
 	if (OWI_DetectPresence(OWI_PORT_PINMASK))
 	{
+		cli();
+		
 		OWI_MatchRom(rom, 0);
 		OWI_SendByte(DS1820_START_CONVERSION, 0);
-	
+		
+		sei();
 		delay_s(1);
 
 		if (OWI_DetectPresence(OWI_PORT_PINMASK))
 		{
 			uint8_t low = 0, high = 0;
+			
+			cli();			
 			OWI_MatchRom(rom, 0);
 			OWI_SendByte(DS1820_READ_SCRATCHPAD, 0);
 			low = OWI_ReceiveByte(0);
 			high = OWI_ReceiveByte(0);
+			sei();
 			
 			ret = (low >> 4) + ((high & 7) << 4);
 			
@@ -117,9 +117,6 @@ int ds18b20_read_temp(unsigned char *rom)
 				ret = -ret;
 		}
 	}
-	
-	system_tick();	
-	sei();
 	
 	return ret;
 }

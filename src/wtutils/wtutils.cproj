@@ -204,22 +204,22 @@
     <Compile Include="radio.c">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="src\board.h">
+    <Compile Include="board.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="src\clock.h">
+    <Compile Include="clock.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="src\conf_board.h">
+    <Compile Include="conf_board.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="src\radio.h">
+    <Compile Include="radio.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="src\radio_commands.h">
+    <Compile Include="radio_commands.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="src\user_board.h">
+    <Compile Include="user_board.h">
       <SubType>compile</SubType>
     </Compile>
     <None Include="src\asf.h">
