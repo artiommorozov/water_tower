@@ -12,11 +12,15 @@ Pump:
   - motor on timeout reached - motor off, msg on LCD
   - motor off timeout reached - motor on, msg on LCD
   - LCD history button push - LCD cycles messages once  
+- Power-up, motor on with 'reboot' msg due to motor status stored in eeprom
+  - tower high - motor off, msg on LCD
 - Power-up, motor off timeout reached - motor on, msg on LCD
+  - tower high - motor off, msg on LCD
 - Power-up, temp sensor below limit, set cold off timeout a bit below off timeout, cold off timeout reached - motor on, msg on LCD
   - tower high - motor still on, msg on LCD (overfill to drainage test)
   - cold runtime timeout reached - motor stop
   - temp up, motor off timeout reached - motor start, msg on LCD
+  - tower high - motor off, msg on LCD
 - Power-up, temp sensor below limit, set cold off timeout a bit below off timeout, cold off timeout reached - motor on, msg on LCD
   - tower low - motor still on, msg on LCD
   - cold runtime timeout reached - motor still on, msg on LCD

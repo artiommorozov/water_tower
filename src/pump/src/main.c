@@ -51,6 +51,7 @@ static time_t motor_last_stop = 0, motor_last_start = 0, motor_next_stop = 0;
 #ifndef TESTMODE
 static const time_t force_start_if_no_radio = 60UL * 60 * 24; 
 static const time_t force_stop_if_no_radio = 60UL * 60 * 3; 
+static const time_t force_stop_if_restarted = 60UL * 60 * 1; 
 static const time_t force_start_in_winter_each = 60UL * 60 * 3; 
 static const time_t winter_runtime = 60 * 10;
 static const int winter_max_temp = -5;
@@ -58,6 +59,7 @@ static const int winter_max_temp = -5;
 static const time_t force_start_if_no_radio = 60;
 static const time_t force_stop_if_no_radio = 60;
 static const time_t force_start_in_winter_each = 50;
+static const time_t force_stop_if_restarted = 30; 
 static const time_t winter_runtime = 40;
 static const int winter_max_temp = 25;
 #endif
@@ -110,6 +112,54 @@ static void displayMsg(const char *v, const char *action)
 	show_msg(0);
 }
 
+uint8_t data[] __attribute__((section(".eeprom"))) = {
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 	
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+static const uint32_t motor_status_addr = 0x200;
+
+static void storeMotorOnStatus(unsigned char is_on)
+{
+	while(EECR & (1<<EEPE))
+		;
+
+	cli();
+	EEAR = motor_status_addr;
+	EEDR = is_on ? 1 : 0;
+
+	EECR |= (1<<EEMPE);
+	EECR |= (1<<EEPE);
+	sei();
+}
+
+static unsigned char wasMotorOnWhileShutdown(void)
+{
+	while(EECR & (1<<EEPE))
+		;
+
+	EEAR = motor_status_addr;
+	
+	EECR |= (1<<EERE);
+
+	return EEDR;
+}
+
 static void motorStart(const char *msg, time_t runtime, enum PumpStatus new_status)
 {
 	if (pump_status != Stopped
@@ -120,6 +170,7 @@ static void motorStart(const char *msg, time_t runtime, enum PumpStatus new_stat
 		return;
 	}
 	
+	storeMotorOnStatus(1);
 	ioport_set_pin_high(MOTOR_PIN);
 	pump_status = new_status;
 	
@@ -135,6 +186,7 @@ static void motorStop(const char *msg)
 	
 	if (pump_status != Stopped)
 	{
+		storeMotorOnStatus(0);
 		pump_status = Stopped;
 		time(&motor_last_stop);
 	}
@@ -281,6 +333,12 @@ static void enableMCUWatchdog(void)
 	sei();
 }
 
+static void resetMotorStateAfterReset(void)
+{
+	if (wasMotorOnWhileShutdown())
+		motorStart("перезагрузка", force_stop_if_restarted, StartedByTimeout);
+}
+
 int main (void)
 {
 	int lcd_history_line = 0;
@@ -304,7 +362,7 @@ int main (void)
 
 	scanTempSensor();	
 	
-	while (1)
+	for (resetMotorStateAfterReset(); 1;)
 	{
 		checkReqAndReply();
 		
