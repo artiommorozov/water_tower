@@ -37,6 +37,7 @@
 #include <avr/sleep.h>
 #include <radio.h>
 #include <radio_commands.h>
+#include <clock.h>
 
 enum InterruptOnChange
 {
@@ -48,22 +49,10 @@ enum WaterLevel
 {
 	LevelLow,
 	LevelHigh,
-	LevelGood	
+	LevelGood
 };
 
-void resetWaterLevelInterrupt(void);
-bool lowLevelTriggered(void);
-bool highLevelTriggered(void);
-enum WaterLevel checkWaterLevel(void);
-void megaSleep(void);
-int sleepUntilLevelChanges(enum WaterLevel prev_level);
-void interruptOnWaterLevel(enum InterruptOnChange water_low, enum InterruptOnChange water_high);
-int reportLevel(const char *req, const char *resp);
-int reportHighLevel(void);
-int reportLowLevel(void);
-void blink(int count);
-
-void blink(int count)
+static void blink(int count)
 {
 	for (int k = 0; k < count; ++k)
 	{
@@ -74,34 +63,17 @@ void blink(int count)
 	}
 }
 
-
-void resetWaterLevelInterrupt(void)
-{
-	PCICR &= 0;
-}
-
-ISR(PCINT1_vect)
-{
-	resetWaterLevelInterrupt();
-}
-
-void interruptOnWaterLevel(enum InterruptOnChange water_low, enum InterruptOnChange water_high)
-{
-	PCMSK1 |= (1 << WATER_HIGH_INT) + (1 << WATER_LOW_INT);
-	PCICR |= 1 << PCIE1;	
-}
-
-bool lowLevelTriggered(void)
+static bool lowLevelTriggered(void)
 {
 	return !ioport_get_pin_level(WATER_LOW);
 }
 
-bool highLevelTriggered(void)
+static bool highLevelTriggered(void)
 {
 	return !ioport_get_pin_level(WATER_HIGH);
 }
 
-enum WaterLevel checkWaterLevel(void)
+static enum WaterLevel checkWaterLevel(void)
 {
 	int low = 0, high = 0;
 	const int cycles = 100;
@@ -114,26 +86,20 @@ enum WaterLevel checkWaterLevel(void)
 		if (highLevelTriggered())
 			++high;
 			
-		delay_ms(10);
+		delay_ms(20);
 	}
 	
 	if (low > cycles / 2)
-	{
-		blink(3);
 		return LevelLow;
-	}
 	else if (high > cycles / 2)
-	{
-		blink(2);
 		return LevelHigh;
-	}
 	
 	return LevelGood;
 }
 
-void megaSleep(void)
+static void megaSleep(void)
 {
-	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+	set_sleep_mode(SLEEP_MODE_IDLE);
 	
 	sleep_enable();
 	sleep_bod_disable();
@@ -144,52 +110,50 @@ void megaSleep(void)
 	sleep_disable();
 }
 
-int sleepUntilLevelChanges(enum WaterLevel prev_level)
+static int timeoutReached(time_t wait_start, time_t expires_at)
 {
-	enum WaterLevel new_level = prev_level;
+	time_t now;
+	time(&now);
 	
-	while (1)
-	{
-		cli();
-		
-		switch (prev_level)
-		{
-		case LevelLow: interruptOnWaterLevel(PinReset, PinTriggered); break;
-		case LevelHigh: interruptOnWaterLevel(PinTriggered, PinReset); break;
-		case LevelGood: interruptOnWaterLevel(PinTriggered, PinTriggered); break;
-		}
-		
-		if ((new_level = checkWaterLevel()) != prev_level)
-		{
-			resetWaterLevelInterrupt();
-			break;
-		}
-		
-		megaSleep();
-
-		if ((new_level = checkWaterLevel()) == prev_level)
-			continue;
-			
-		cli();
-		prev_level = new_level;
-		break; 
-	} 
-
-	sei();
-	return new_level;
+	return ((expires_at > wait_start && now >= expires_at)
+		|| (expires_at < wait_start && (now >= expires_at && now < wait_start)));	
 }
 
-int reportLevel(const char *req, const char *resp)
+static void sleepUntilLevelChanges(enum WaterLevel prev_level)
+{
+	const time_t check_timeout_sec = 30,
+		repeat_low_level_sec = 60 * 30;
+		
+	time_t wait_start, next_check_at, enter_time;
+	
+	for (time(&enter_time); 
+		checkWaterLevel() == prev_level
+		&& !(prev_level == LevelLow
+			&& timeoutReached(enter_time, enter_time + repeat_low_level_sec));
+		)
+	{
+		time(&wait_start);
+		next_check_at = wait_start + check_timeout_sec;
+
+		while (!timeoutReached(wait_start, next_check_at))
+			megaSleep();				
+	}	
+}
+
+static int reportLevel(const char *req, const char *resp)
 {
 	const int radio_retry = 5;
-	const int retry_timeout_sec = 30;
+	int retry_time_base = 30;
 	int ret;
 		
 	for (int i = 0; i < radio_retry && !(ret = usartReqWaitAck(req, resp, STATUS_RADIO_REQ_PIN)); ++i)
-		for (int j = 0; j < retry_timeout_sec; ++j)
+	{
+		for (int j = 0; j < retry_time_base * (j + 1); ++j)
 		{
 			delay_s(1);
+			ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
 		}
+	}
 		
 	if (ret)
 		ioport_set_pin_high(STATUS_RADIO_OK_PIN);	
@@ -201,12 +165,12 @@ int reportLevel(const char *req, const char *resp)
 	return ret;
 }
 
-int reportLowLevel(void)
+static int reportLowLevel(void)
 {
 	return reportLevel(API_LOW_REQ, API_LOW_RESP);
 }
 
-int reportHighLevel(void)
+static int reportHighLevel(void)
 {
 	return reportLevel(API_HIGH_REQ, API_HIGH_RESP);
 }
@@ -230,6 +194,7 @@ int main (void)
 	board_init();
 
 	led_init();	
+	clock_init(BOARD_EXTERNAL_CLK, 0);
 		
 	sei();
 
@@ -250,9 +215,9 @@ int main (void)
 		enum WaterLevel level;
 		switch (level = checkWaterLevel())
 		{
-		case LevelLow: { reportLowLevel(); } break;
-		case LevelHigh: { reportHighLevel(); } break;
-		case LevelGood: break;
+		case LevelLow: { blink(1); reportLowLevel(); } break;
+		case LevelGood: { blink(2);  } break;
+		case LevelHigh: { blink(3); reportHighLevel(); } break;
 		}
 
 		sleepUntilLevelChanges(level);

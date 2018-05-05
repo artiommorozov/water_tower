@@ -50,7 +50,7 @@ void clock_init(uint32_t clk_freq, uint8_t a_stobe_pin)
 	GTCCR = (1 << TSM) | (1 << PSRSYNC);
 	
 	TCCR0A = 0;
-	TCCR0B = (1 << CS02) | (1 << CS00); // prescaler 102
+	TCCR0B = (1 << CS02) | (1 << CS00); // prescaler 1024
 	TIMSK0 |= (1 << TOIE0); // then extra division by 256 with this overflow
 	
 	GTCCR = 0;
