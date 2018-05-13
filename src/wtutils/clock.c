@@ -32,6 +32,11 @@ int get_clock(void)
 	return v;
 }
 
+uint32_t clock_sec_to_interrupts(uint32_t sec)
+{
+	return sec * interrupts_per_sec;
+}
+
 void clock_init(uint32_t clk_freq, uint8_t a_stobe_pin)
 {
 	if (initialized)

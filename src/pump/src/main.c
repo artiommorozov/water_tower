@@ -49,8 +49,8 @@ static time_t motor_last_stop = 0, motor_last_start = 0, motor_next_stop = 0;
 //#define TESTMODE
 
 #ifndef TESTMODE
-static const time_t force_start_if_no_radio = 60UL * 60 * 24; 
-static const time_t force_stop_if_no_radio = 60UL * 60 * 3; 
+static const time_t force_start_if_no_radio = 60UL * 60 * 12; 
+static const time_t force_stop_if_no_radio = 60UL * 60 * 4; 
 static const time_t force_stop_if_restarted = 60UL * 60 * 1; 
 static const time_t force_start_in_winter_each = 60UL * 60 * 3; 
 static const time_t winter_runtime = 60 * 10;

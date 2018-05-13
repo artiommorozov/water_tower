@@ -1,8 +1,12 @@
 Tower:
 - low sensor triggered - sending low, stop after ACK
 - high sensor triggered - sending high, stop after ACK
-- low sensor triggered - sending low, stop after max retry count
-
+- low sensor triggered - sending low, stop after max retry count, repeat send cycle after timeout
+  - high sensor triggered - sending high, stop after max retry count, repeat send cycle after critical level repeat timeout (90s)
+    - high disconnected - stop send cycle
+	- low triggered for too short period of time (<3/4 of sampling interval - 2s) - don't send anything
+- trigger level change during sleep (30s in testmode) - nothing changes
+	
 Pump:
 - Power-up - motor off, temp sensor OK
 - Power-up, tower high - motor off, msg on LCD

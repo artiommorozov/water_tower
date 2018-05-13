@@ -29,7 +29,14 @@
  * Support and FAQ: visit <a href="http://www.atmel.com/design-support/">Atmel Support</a>
  */
 #include <asf.h>
+
+#ifdef DEBUG
+#define delay_s(x) 
+#define delay_ms(x) 
+#else
 #include <delay.h>
+#endif
+
 #include <stdio.h>
 #include <string.h>
 
@@ -39,11 +46,70 @@
 #include <radio_commands.h>
 #include <clock.h>
 
-enum InterruptOnChange
+//#define TESTMODE
+//#define TESTMODE_NOCOMM
+
+#ifdef TESTMODE
+static const time_t check_timeout_sec = 15,
+					repeat_crit_level_sec = 30 * 3,
+					repeat_crit_level_no_reply_sec = 30;
+#else
+static const time_t check_timeout_sec = 60 * 2, // 2min between level checks (idle time)
+					repeat_crit_level_sec = 60 * 60, // 1hr to repeat low/high level if it keeps and we got ack from pump
+					repeat_crit_level_no_reply_sec = 60 * 2 * 3; // 6min to repeat low/high if it keeps and we didn't get ack
+#endif
+
+static void procIdle(uint32_t cycles)
 {
-	PinTriggered,
-	PinReset
-};
+	set_sleep_mode(SLEEP_MODE_IDLE);
+	
+	sleep_enable();
+	sleep_bod_disable();
+	
+	while (cycles--)
+		sleep_cpu();
+	
+	sleep_disable();
+}
+
+#ifdef TESTMODE_NOCOMM
+
+static int reportLevel(const char *req, const char *resp)
+{
+	ioport_set_pin_high(STATUS_RADIO_OK_PIN);
+	ioport_set_pin_high(STATUS_RADIO_REQ_PIN);
+	delay_s(2);
+	ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
+	ioport_set_pin_low(STATUS_RADIO_OK_PIN);
+	return 1;
+}
+
+#else
+
+static int reportLevel(const char *req, const char *resp)
+{
+	const int radio_retry = 2;
+	int retry_timeout = 30;
+	int ret;
+	
+	for (int i = 1; !(ret = usartReqWaitAck(req, resp, STATUS_RADIO_REQ_PIN)) && i < radio_retry; ++i)
+	{
+		delay_s(1);
+		ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
+		procIdle(clock_sec_to_interrupts(retry_timeout));
+	}
+	
+	if (ret)
+		ioport_set_pin_high(STATUS_RADIO_OK_PIN);
+	
+	delay_s(2);
+	ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
+	ioport_set_pin_low(STATUS_RADIO_OK_PIN);
+	
+	return ret;
+}
+
+#endif
 
 enum WaterLevel
 {
@@ -77,6 +143,7 @@ static enum WaterLevel checkWaterLevel(void)
 {
 	int low = 0, high = 0;
 	const int cycles = 100;
+	const int treshold = (cycles * 3) / 4;
 	
 	for (int i = 0; i < cycles; ++i)
 	{
@@ -89,25 +156,17 @@ static enum WaterLevel checkWaterLevel(void)
 		delay_ms(20);
 	}
 	
-	if (low > cycles / 2)
+	if (low > treshold 
+		&& high > treshold)
+	{
+		return LevelGood;		
+	}
+	else if (low > treshold)
 		return LevelLow;
-	else if (high > cycles / 2)
+	else if (high > treshold)
 		return LevelHigh;
 	
 	return LevelGood;
-}
-
-static void megaSleep(void)
-{
-	set_sleep_mode(SLEEP_MODE_IDLE);
-	
-	sleep_enable();
-	sleep_bod_disable();
-	sei();
-	
-	sleep_cpu();
-	
-	sleep_disable();
 }
 
 static int timeoutReached(time_t wait_start, time_t expires_at)
@@ -119,50 +178,19 @@ static int timeoutReached(time_t wait_start, time_t expires_at)
 		|| (expires_at < wait_start && (now >= expires_at && now < wait_start)));	
 }
 
-static void sleepUntilLevelChanges(enum WaterLevel prev_level)
-{
-	const time_t check_timeout_sec = 30,
-		repeat_low_level_sec = 60 * 30;
-		
-	time_t wait_start, next_check_at, enter_time;
-	
-	for (time(&enter_time); 
-		checkWaterLevel() == prev_level
-		&& !(prev_level == LevelLow
-			&& timeoutReached(enter_time, enter_time + repeat_low_level_sec));
-		)
-	{
-		time(&wait_start);
-		next_check_at = wait_start + check_timeout_sec;
+static void sleepUntilLevelChanges(enum WaterLevel prev_level, int last_level_ack)
+{		
+	time_t enter_time, repeat_time;
 
-		while (!timeoutReached(wait_start, next_check_at))
-			megaSleep();				
-	}	
-}
+	time(&enter_time);
+	repeat_time = enter_time + (last_level_ack ? repeat_crit_level_sec : repeat_crit_level_no_reply_sec);
 
-static int reportLevel(const char *req, const char *resp)
-{
-	const int radio_retry = 5;
-	int retry_time_base = 30;
-	int ret;
-		
-	for (int i = 0; i < radio_retry && !(ret = usartReqWaitAck(req, resp, STATUS_RADIO_REQ_PIN)); ++i)
+	do 
 	{
-		for (int j = 0; j < retry_time_base * (j + 1); ++j)
-		{
-			delay_s(1);
-			ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
-		}
-	}
-		
-	if (ret)
-		ioport_set_pin_high(STATUS_RADIO_OK_PIN);	
-		
-	delay_s(2);
-	ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
-	ioport_set_pin_low(STATUS_RADIO_OK_PIN);	
-	
-	return ret;
+		procIdle(clock_sec_to_interrupts(check_timeout_sec));
+	} while ((checkWaterLevel() == prev_level)
+		&& (prev_level == LevelGood
+			|| !timeoutReached(enter_time, repeat_time)));
 }
 
 static int reportLowLevel(void)
@@ -212,14 +240,15 @@ int main (void)
 
 	while (1)
 	{
+		int ack = 0;
 		enum WaterLevel level;
 		switch (level = checkWaterLevel())
 		{
-		case LevelLow: { blink(1); reportLowLevel(); } break;
+		case LevelLow: { blink(1); ack = reportLowLevel(); } break;
 		case LevelGood: { blink(2);  } break;
-		case LevelHigh: { blink(3); reportHighLevel(); } break;
+		case LevelHigh: { blink(3); ack = reportHighLevel(); } break;
 		}
 
-		sleepUntilLevelChanges(level);
+		sleepUntilLevelChanges(level, ack);
 	}
 }

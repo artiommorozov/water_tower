@@ -5,6 +5,7 @@
 
 void clock_init(uint32_t clk_freq, uint8_t a_stobe_pin);
 int get_clock(void);
+uint32_t clock_sec_to_interrupts(uint32_t sec);
 
 int hours(time_t v);
 int minutes(time_t v);

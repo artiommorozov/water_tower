@@ -52,12 +52,10 @@ static const size_t rom_size = 8;
 
 void ds18b20_scan(unsigned char **roms, int *inout_num_rom)
 {
-	char buf[0x20];
-	int numDevices = 0, pres = 0;
+	int numDevices = 0;
 	unsigned char *newID = roms[0];
-	uint8_t pres2 = 0;
 	
-	pres = OWI_DetectPresence(OWI_PORT_PINMASK);
+	OWI_DetectPresence(OWI_PORT_PINMASK);
 	
 	int lastDeviation = 0;
 	// Do slave search on each bus, and place identifiers and corresponding

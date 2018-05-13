@@ -12,7 +12,7 @@ Two components: tower and motor (pump). Source code for microcontrollers in atme
 
 Runs on Atmega328 MCU with 1.84MHz quartz to make usart communication reliable. Uses china clone of E32TTL100 radio module with usart interface. As there's no power supply at tower side MCU is powered from solar panels and 12v lead-acid accumulator, using simple PWM solar controller from store. Voltage conversion uses L4940V5 low-dropout regulator. 
 
-Water level sensor connects ground to MCU pins and so wakes it via pin change interrupt. MCU will then request on/off from pump side via radio (sends req and waits for ack a few times) and then will go to sleep to save battery. Radio uses wake-up mode assuming motor part radio is asleep.
+Water level sensor connects ground to MCU pins. MCU spends most time idle and wakes only to check sensor status from time to time. If level change needs pump action or pump didn't responds (either with ack or no level change occured), MCU requests on/off from pump side via radio (sends req and waits for ack a few times). Radio uses wake-up mode assuming motor part radio is asleep.
 
 D1 is startup diagnostics LED, D2 indicates sending data, D3 - ack received.
 
