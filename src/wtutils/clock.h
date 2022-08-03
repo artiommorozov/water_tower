@@ -3,7 +3,7 @@
 
 #include <time.h>
 
-void clock_init(uint32_t clk_freq, uint8_t a_stobe_pin);
+void clock_init(uint32_t clk_freq, int watchdogClock);
 int get_clock(void);
 uint32_t clock_sec_to_interrupts(uint32_t sec);
 

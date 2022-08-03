@@ -6,7 +6,11 @@ void usartTransInit(int aux, int md0, int md1);
 void waitRadioInit(int blink_pin);
 void radioWake(int blink_pin);
 void radioSleep(void);
+void radioOff(int power);
+void radioOn(int power);
 int usartReqWaitAck(const char *req, const char *resp, int radio_status_pin);
+char *usartGetLastBuffer(int *len);
+int usartReqCfg(const char *req, char *resp, int respLen, int radio_status_pin);
 
 // receiver
 void usartRecvInit(int aux, int md0, int md1);

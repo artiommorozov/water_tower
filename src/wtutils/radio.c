@@ -13,6 +13,9 @@ static int RADIO_AUX = 0;
 static int RADIO_MD0 = 0;
 static int RADIO_MD1 = 0;
 
+#define RADIO_TXD	IOPORT_CREATE_PIN(PORTD, 1)
+#define RADIO_RXD	IOPORT_CREATE_PIN(PORTD, 0)
+
 void waitRadioInit(int blink_pin)
 {
 	do
@@ -105,6 +108,32 @@ int usartReqWaitAck(const char *req, const char *resp, int radio_status_pin)
 	disableUsartInterrupt();
 	
 	return strncmp(usart_buffer, resp, resp_len) == 0;
+}
+
+int usartReqCfg(const char *req, char *resp, int respLen, int radio_status_pin)
+{
+	int ret = -1;
+	
+	enableUsartInterrupt();
+	radioSleep();
+	
+	for (const char *p = req; *p; ++p)
+		usart_putchar((USART_t*) &UCSR0A, *p);
+
+	delay_s(1);	
+	ret = usart_buffer_pos;
+	if (ret > 0)
+		memcpy(resp, usart_buffer, respLen < ret ? respLen : ret);
+	
+	disableUsartInterrupt();
+	
+	return ret;
+}
+
+char *usartGetLastBuffer(int *len)
+{
+	*len = usart_buffer_pos;
+	return usart_buffer;
 }
 
 static void usartEnterPowerSavingMode(void)
@@ -213,3 +242,46 @@ int usartIsRecvComplete(const char **requests, int *bytes_available, int *rtime)
 	return ret;
 }
 
+void radioOff(int power)
+{
+	ioport_set_pin_low(power);	
+	
+	delay_ms(100);
+	
+	ioport_set_pin_low(RADIO_MD0);
+	ioport_set_pin_low(RADIO_MD1);
+	
+	ioport_set_pin_dir(RADIO_AUX, IOPORT_DIR_OUTPUT);
+	ioport_set_pin_low(RADIO_AUX);
+//	ioport_set_pin_mode(RADIO_AUX, IOPORT_MODE_PULLDOWN);
+	
+	((USART_t*) &UCSR0A)->UCSRnB &= ~(USART_RXEN_bm | USART_TXEN_bm);
+	
+	ioport_set_pin_low(RADIO_TXD);
+	
+	ioport_set_pin_dir(RADIO_RXD, IOPORT_DIR_OUTPUT);
+	ioport_set_pin_low(RADIO_RXD);
+	
+//	ioport_set_pin_dir(RADIO_RXD, IOPORT_DIR_INPUT);
+//	ioport_set_pin_mode(RADIO_RXD, IOPORT_MODE_PULLDOWN); // output: high - +1.5mA, low - +0.4mA, input up - 0
+}
+
+void radioOn(int power)
+{
+	ioport_set_pin_low(RADIO_MD0);
+	ioport_set_pin_low(RADIO_MD1);
+	ioport_set_pin_low(RADIO_TXD);
+	
+	ioport_set_pin_dir(RADIO_AUX, IOPORT_DIR_INPUT);
+	ioport_set_pin_mode(RADIO_AUX, IOPORT_MODE_PULLUP);
+
+	ioport_set_pin_dir(RADIO_RXD, IOPORT_DIR_INPUT);
+	ioport_set_pin_mode(RADIO_RXD, IOPORT_MODE_PULLUP);
+
+	((USART_t*) &UCSR0A)->UCSRnB |= USART_RXEN_bm | USART_TXEN_bm;
+
+	initRadioComm();
+	
+	ioport_set_pin_high(power);
+	delay_ms(500);
+}

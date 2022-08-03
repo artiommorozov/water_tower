@@ -54,7 +54,7 @@ static const time_t force_stop_if_no_radio = 60UL * 60 * 4;
 static const time_t force_stop_if_restarted = 60UL * 60 * 1; 
 static const time_t force_start_in_winter_each = 60UL * 60 * 3; 
 static const time_t winter_runtime = 60 * 10;
-static const int winter_max_temp = -5;
+static const int winter_max_temp = -1;
 #else
 static const time_t force_start_if_no_radio = 60;
 static const time_t force_stop_if_no_radio = 60;
@@ -333,6 +333,7 @@ static void enableMCUWatchdog(void)
 	sei();
 }
 
+
 static void resetMotorStateAfterReset(void)
 {
 	if (wasMotorOnWhileShutdown())
@@ -345,7 +346,7 @@ int main (void)
 	
 	sysclk_init();
 	board_init();
-	clock_init(BOARD_EXTERNAL_CLK, WATCHDOG_PIN);
+	clock_init(BOARD_EXTERNAL_CLK, 0);
 	enableMCUWatchdog();
 	
 	sei();

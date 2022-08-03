@@ -86,7 +86,7 @@ void ds18b20_scan(unsigned char **roms, int *inout_num_rom)
 
 int ds18b20_read_temp(unsigned char *rom)
 {
-	int16_t ret = 99;
+	int ret = 99;
 
 	if (OWI_DetectPresence(OWI_PORT_PINMASK))
 	{
@@ -102,17 +102,15 @@ int ds18b20_read_temp(unsigned char *rom)
 		{
 			uint8_t low = 0, high = 0;
 			
-			cli();			
+			cli();			                        
 			OWI_MatchRom(rom, 0);
 			OWI_SendByte(DS1820_READ_SCRATCHPAD, 0);
 			low = OWI_ReceiveByte(0);
 			high = OWI_ReceiveByte(0);
 			sei();
 			
-			ret = (low >> 4) + ((high & 7) << 4);
-			
-			if (high & ~7)
-				ret = -ret;
+			float ft = (int16_t) ((high << 8) | low);
+                        ret = (int) (ft / 16);					
 		}
 	}
 	

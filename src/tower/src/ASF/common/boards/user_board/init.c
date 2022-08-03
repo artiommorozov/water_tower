@@ -21,7 +21,8 @@ void blink(int);
 
 void board_init(void)
 {
-	const int out_pins[] = { RADIO_MD0, RADIO_MD1, LEDPIN, STATUS_RADIO_OK_PIN, STATUS_RADIO_REQ_PIN };
+	const int out_pins[] = { RADIO_MD0, RADIO_MD1, RADIO_POWER, 
+		LEDPIN1, LEDPIN2, LEDPIN3, LEDPIN4 };
 	
 	ioport_init();
 	ioport_set_pin_dir(WATER_LOW, IOPORT_DIR_INPUT);
@@ -38,5 +39,6 @@ void board_init(void)
 		ioport_set_pin_low(out_pins[i]);
 	}
 	
-	usartTransInit(RADIO_AUX, RADIO_MD0, RADIO_MD1);
+	ACSR = (1 << ACD);
+	ADCSRA = 0;
 }

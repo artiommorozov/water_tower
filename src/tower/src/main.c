@@ -29,19 +29,14 @@
  * Support and FAQ: visit <a href="http://www.atmel.com/design-support/">Atmel Support</a>
  */
 #include <asf.h>
-
-#ifdef DEBUG
-#define delay_s(x) 
-#define delay_ms(x) 
-#else
 #include <delay.h>
-#endif
 
 #include <stdio.h>
 #include <string.h>
 
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
+#include <avr/power.h>
 #include <radio.h>
 #include <radio_commands.h>
 #include <clock.h>
@@ -50,18 +45,33 @@
 //#define TESTMODE_NOCOMM
 
 #ifdef TESTMODE
-static const time_t check_timeout_sec = 15,
+static const time_t check_timeout_sec = 10,
 					repeat_crit_level_sec = 30 * 3,
-					repeat_crit_level_no_reply_sec = 30;
+					repeat_crit_level_no_reply_sec = 10;
 #else
 static const time_t check_timeout_sec = 60 * 2, // 2min between level checks (idle time)
 					repeat_crit_level_sec = 60 * 60, // 1hr to repeat low/high level if it keeps and we got ack from pump
-					repeat_crit_level_no_reply_sec = 60 * 2 * 3; // 6min to repeat low/high if it keeps and we didn't get ack
+					repeat_crit_level_no_reply_sec = 60 * 10; // 10min to repeat low/high if it keeps and we didn't get ack
 #endif
 
-static void procIdle(uint32_t cycles)
+static int error = 0;
+
+static int ledPins[] = { LEDPIN1, LEDPIN2, LEDPIN3, LEDPIN4 };
+
+static void delay_manySec(int sec)
 {
-	set_sleep_mode(SLEEP_MODE_IDLE);
+	for (int i = 0; i < sec; ++i)
+	{
+		delay_s(1);
+	}
+}
+
+#undef delay_s
+#define delay_s delay_manySec
+
+static void powerDown(uint32_t cycles)
+{	
+	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 	
 	sleep_enable();
 	sleep_bod_disable();
@@ -72,10 +82,40 @@ static void procIdle(uint32_t cycles)
 	sleep_disable();
 }
 
+
+static void ledOff(void)
+{
+	for (int i = 0; i < sizeof(ledPins) / sizeof(ledPins[0]); ++i)
+		ioport_set_pin_low(ledPins[i]);
+}
+
+static void ledInit(void)
+{
+	for (int i = 0; i < sizeof(ledPins) / sizeof(ledPins[0]); ++i)
+	{
+		ioport_set_pin_high(ledPins[i]);
+		delay_ms(500);
+	}
+	
+	ledOff();
+}
+
+static void showWorkingStatus(void)
+{
+	if (error)
+		ioport_set_pin_high(STATUS_ERR_LED);
+	
+	ioport_set_pin_high(STATUS_OK_LED);
+	delay_ms(100);
+	ioport_set_pin_low(STATUS_OK_LED);
+	ioport_set_pin_low(STATUS_ERR_LED);
+}
+
 #ifdef TESTMODE_NOCOMM
 
 static int reportLevel(const char *req, const char *resp)
 {
+	delay_s(1);
 	ioport_set_pin_high(STATUS_RADIO_OK_PIN);
 	ioport_set_pin_high(STATUS_RADIO_REQ_PIN);
 	delay_s(2);
@@ -91,17 +131,27 @@ static int reportLevel(const char *req, const char *resp)
 	const int radio_retry = 2;
 	int retry_timeout = 30;
 	int ret;
-	
-	for (int i = 1; !(ret = usartReqWaitAck(req, resp, STATUS_RADIO_REQ_PIN)) && i < radio_retry; ++i)
+	int i = 0;
+		
+	while (i++ < radio_retry)
 	{
+		radioOn(RADIO_POWER);
+		ret = usartReqWaitAck(req, resp, STATUS_RADIO_REQ_PIN);
+		radioOff(RADIO_POWER);
+
+		if (ret)
+			break;
+		
 		delay_s(1);
 		ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
-		procIdle(clock_sec_to_interrupts(retry_timeout));
+		powerDown(clock_sec_to_interrupts(retry_timeout));
 	}
 	
 	if (ret)
 		ioport_set_pin_high(STATUS_RADIO_OK_PIN);
-	
+
+	error = !ret;	
+		
 	delay_s(2);
 	ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
 	ioport_set_pin_low(STATUS_RADIO_OK_PIN);
@@ -117,17 +167,6 @@ enum WaterLevel
 	LevelHigh,
 	LevelGood
 };
-
-static void blink(int count)
-{
-	for (int k = 0; k < count; ++k)
-	{
-		ioport_set_pin_high(LEDPIN);
-		delay_s(1);
-		ioport_set_pin_low(LEDPIN);
-		delay_s(1);
-	}
-}
 
 static bool lowLevelTriggered(void)
 {
@@ -187,54 +226,142 @@ static void sleepUntilLevelChanges(enum WaterLevel prev_level, int last_level_ac
 
 	do 
 	{
-		procIdle(clock_sec_to_interrupts(check_timeout_sec));
+		showWorkingStatus();
+		powerDown(clock_sec_to_interrupts(check_timeout_sec));
 	} while ((checkWaterLevel() == prev_level)
 		&& (prev_level == LevelGood
 			|| !timeoutReached(enter_time, repeat_time)));
 }
 
+static int level_change_led_time_s = 3;
+
 static int reportLowLevel(void)
 {
+	ioport_set_pin_high(STATUS_LED_LOW);
+	delay_s(level_change_led_time_s);
+	ledOff();
+	
 	return reportLevel(API_LOW_REQ, API_LOW_RESP);
 }
 
 static int reportHighLevel(void)
 {
+	ioport_set_pin_high(STATUS_LED_LOW);
+	ioport_set_pin_high(STATUS_LED_MED);
+	ioport_set_pin_high(STATUS_LED_HIGH);
+	delay_s(level_change_led_time_s);
+	ledOff();
+	
 	return reportLevel(API_HIGH_REQ, API_HIGH_RESP);
 }
 
-static void led_init(void)
+static void reportMedLevel(void)
 {
-	ioport_set_pin_high(LEDPIN);
+	ioport_set_pin_high(STATUS_LED_LOW);
+	ioport_set_pin_high(STATUS_LED_MED);
+	delay_s(level_change_led_time_s);
+	ledOff();
+}
+
+static void showNibble(unsigned char t)
+{
+	if (t & 1)
+		ioport_set_pin_high(STATUS_LED_HIGH);
+		
+	if (t & 2)
+		ioport_set_pin_high(STATUS_LED_MED);
+		
+	if (t & 4)
+		ioport_set_pin_high(STATUS_LED_LOW);
+						
+	if (t & 8)
+		ioport_set_pin_high(STATUS_ERR_LED);
+
 	delay_s(1);
-	ioport_set_pin_high(STATUS_RADIO_REQ_PIN);
-	delay_s(1);
-	ioport_set_pin_high(STATUS_RADIO_OK_PIN);
-	delay_s(1);
-	ioport_set_pin_low(LEDPIN);
-	ioport_set_pin_low(STATUS_RADIO_REQ_PIN);
-	ioport_set_pin_low(STATUS_RADIO_OK_PIN);
+	ledOff();	
 }
 
 int main (void)
-{
+{	
 	sysclk_init();
 	board_init();
 
-	led_init();	
-	clock_init(BOARD_EXTERNAL_CLK, 0);
-		
+	radioOn(RADIO_POWER);
+	usartTransInit(RADIO_AUX, RADIO_MD0, RADIO_MD1);
+	radioOff(RADIO_POWER);
+
+	ledInit();	
+	clock_init(BOARD_EXTERNAL_CLK, 1);		
+	
+	power_spi_disable();
+	power_timer0_disable();
+	power_timer1_disable();
+	power_timer2_disable();
+	power_twi_disable();	
 	sei();
-
-#if 0	
-	// quick test
-
+	
+#if 0
+	// power consumption test
 	while (1)
 	{
+		ioport_set_pin_high(STATUS_OK_LED);
+		radioOn(RADIO_POWER);
+		delay_s(5);
+		ioport_set_pin_low(STATUS_OK_LED);
+		radioOff(RADIO_POWER);
+		powerDown(60);
+	}
+#endif
+	
+#if 0
+	// params test
+	while (1)
+	{
+			unsigned char cfgReq[4] = { 0xc1, 0xc1, 0xc1, 0 };
+			int respLen = 0;
+			char resp[7];
+			
+			respLen = usartReqCfg((char*) cfgReq, resp, sizeof(resp), STATUS_RADIO_REQ_PIN);
+			
+			if (respLen <= 0)
+			{
+				ioport_set_pin_high(STATUS_ERR_LED);				
+			}
+			else
+			{
+				for (unsigned char *p = (unsigned char*) resp; respLen--; ++p)
+				{
+					showNibble(*p & 0xf);
+					showNibble(*p >> 4);
+					
+					delay_ms(200);
+					ioport_set_pin_high(STATUS_ERR_LED);
+					delay_ms(200);
+					ioport_set_pin_low(STATUS_ERR_LED);
+					delay_ms(200);
+				}	
+			}
+			
+			delay_s(5);
+	}
+#endif	
+	
+#if 0
+	// quick test
+
+	for (; 1; showWorkingStatus())
+	{
+		powerDown(clock_sec_to_interrupts(10));
+		
 		reportHighLevel();
 		delay_s(5);
+		reportMedLevel();
+		delay_s(5);
 		reportLowLevel();
-		for (int i = 0; i < 60; ++i) delay_s(1);
+
+		ledOff();
+		//powerDown(check_timeout_sec);
+		powerDown(50);
 	}
 #endif
 
@@ -244,9 +371,9 @@ int main (void)
 		enum WaterLevel level;
 		switch (level = checkWaterLevel())
 		{
-		case LevelLow: { blink(1); ack = reportLowLevel(); } break;
-		case LevelGood: { blink(2);  } break;
-		case LevelHigh: { blink(3); ack = reportHighLevel(); } break;
+		case LevelLow: { ack = reportLowLevel(); } break;
+		case LevelGood: { reportMedLevel(); } break;
+		case LevelHigh: { ack = reportHighLevel(); } break;
 		}
 
 		sleepUntilLevelChanges(level, ack);
